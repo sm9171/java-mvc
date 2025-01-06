@@ -22,4 +22,4 @@
 
 ## 미션 1 - @MVC 구현
 1. [x] @MVC Framework 테스트 통과하기
-2. [ ] JspView 클래스를 구현한다.
+2. [x] JspView 클래스를 구현한다.
