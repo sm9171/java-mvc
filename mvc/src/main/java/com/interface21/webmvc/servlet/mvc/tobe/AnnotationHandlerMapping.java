@@ -1,11 +1,19 @@
 package com.interface21.webmvc.servlet.mvc.tobe;
 
+import com.interface21.context.stereotype.Controller;
+import com.interface21.web.bind.annotation.RequestMapping;
+import com.interface21.web.bind.annotation.RequestMethod;
 import jakarta.servlet.http.HttpServletRequest;
+import org.reflections.Reflections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class AnnotationHandlerMapping {
 
@@ -21,9 +29,49 @@ public class AnnotationHandlerMapping {
 
     public void initialize() {
         log.info("Initialized AnnotationHandlerMapping!");
+        createHandlerExecutions();
     }
 
     public Object getHandler(final HttpServletRequest request) {
-        return null;
+        return handlerExecutions.get(new HandlerKey(request.getRequestURI(), RequestMethod.valueOf(request.getMethod())));
+    }
+
+    private void createHandlerExecutions() {
+        Reflections reflections = new Reflections(basePackage);
+        Set<Class<?>> handlerClasses = reflections.getTypesAnnotatedWith(Controller.class);
+
+        Map<HandlerKey, HandlerExecution> basePackageHandlerExecutions = handlerClasses.stream()
+                .map(this::parseControllerHandler)
+                .flatMap(handlers -> handlers.entrySet().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        handlerExecutions.putAll(basePackageHandlerExecutions);
+    }
+
+    private Map<HandlerKey, HandlerExecution> parseControllerHandler(Class<?> clazz) {
+        Object controllerInstance;
+        try {
+            controllerInstance = clazz.getDeclaredConstructor().newInstance();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to create instance of controller class", e);
+        }
+        return Arrays.stream(clazz.getMethods())
+                .filter(method -> method.isAnnotationPresent(RequestMapping.class))
+                .map(method -> parseMethodHandler(method, controllerInstance))
+                .flatMap(handlers -> handlers.entrySet().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    private Map<HandlerKey, HandlerExecution> parseMethodHandler(final Method method, final Object controllerInstance) {
+        RequestMapping requestMapping = method.getDeclaredAnnotation(RequestMapping.class);
+        String url = requestMapping.value();
+        HandlerExecution handlerExecution = new HandlerExecution(controllerInstance, method);
+
+        return Arrays.stream(requestMapping.method())
+                .map(requestMethod -> new HandlerKey(url, requestMethod))
+                .collect(Collectors.toMap(
+                        handlerKey -> handlerKey,
+                        handlerKey -> handlerExecution)
+                );
     }
 }
